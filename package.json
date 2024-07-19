@@ -1,6 +1,6 @@
 {
-  "name": "yfp",
-  "version": "0.0.1",
+  "name": "@yuri/fp",
+  "version": "0.0.2",
   "description": "Yuri's functional programming library",
   "main": "index.js",
   "scripts": {
@@ -12,6 +12,9 @@
       "types": "./dist/index.d.ts"
     }
   },
+  "files": [
+    "./dist/*"
+  ],
   "type": "module",
   "author": "Yuri Sulyma <yuri@liqvidjs.org>",
   "license": "MIT",
