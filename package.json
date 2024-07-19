@@ -1,8 +1,8 @@
 {
   "name": "@yuri/fp",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Yuri's functional programming library",
-  "main": "index.js",
+  "module": "./dist/index.mjs",
   "scripts": {
     "build": "rollup -c"
   },

@@ -1,13 +1,13 @@
 // interface
 interface MaybeMethods<T> {
-  map<S>(f: (value: T) => S): Option<S>;
+  map<S>(f: (value: T) => S): Maybe<S>;
   unwrapOr(altValue: T): T;
   unwrapOrElse(f: () => T): T;
 
   json(): SerializedMaybe<T>;
 }
 
-export type Option<T> = MaybeMethods<T> &
+export type Maybe<T> = MaybeMethods<T> &
   (
     | {
         isNone: false;
@@ -34,7 +34,7 @@ class internalMaybe<T> implements MaybeMethods<T> {
     return !this.isSome;
   }
 
-  map<S>(f: (value: T) => S): Option<S> {
+  map<S>(f: (value: T) => S): Maybe<S> {
     if (this.isSome) {
       return Some(f(this.value as T));
     }
@@ -70,14 +70,14 @@ class internalMaybe<T> implements MaybeMethods<T> {
   }
 }
 
-export function Some<T>(value: T): Option<T> {
+export function Some<T>(value: T): Maybe<T> {
   const obj = new internalMaybe(true, value);
   Object.freeze(obj);
-  return obj as unknown as Option<T>;
+  return obj as unknown as Maybe<T>;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const None = new internalMaybe(false) as unknown as Option<any>;
+export const None = new internalMaybe(false) as unknown as Maybe<any>;
 Object.freeze(None);
 
 export type SerializedMaybe<T> = {
@@ -86,7 +86,7 @@ export type SerializedMaybe<T> = {
 
 // eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace Maybe {
-  export function parse<T>(obj: SerializedMaybe<T>): Option<T> {
+  export function parse<T>(obj: SerializedMaybe<T>): Maybe<T> {
     if (obj === null) {
       return None;
     }
