@@ -1,0 +1,26 @@
+{
+  "name": "yfp",
+  "version": "0.0.1",
+  "description": "Yuri's functional programming library",
+  "main": "index.js",
+  "scripts": {
+    "build": "rollup -c"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "type": "module",
+  "author": "Yuri Sulyma <yuri@liqvidjs.org>",
+  "license": "MIT",
+  "devDependencies": {
+    "@rollup/plugin-terser": "^0.4.4",
+    "@rollup/plugin-typescript": "^11.1.6",
+    "prettier": "^3.3.3",
+    "rollup": "^4.18.1",
+    "tslib": "^2.6.3",
+    "typescript": "^5.5.3"
+  }
+}
