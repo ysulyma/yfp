@@ -1,25 +1,35 @@
-export type Result<T, E> = {
+type PromiseValue<A> = A extends Promise<infer T> ? T : A;
+
+type ResultMethods<T, E> = {
   map<S>(f: (value: T) => S): Result<S, E>;
   mapErr<F>(f: (error: E) => F): Result<T, F>;
+  match<T2, E2>(arms: {Ok: (value: T) => T2; Err: (error: E) => E2}): T2 | E2;
+
   unwrapOr<A>(altValue: A): A | T;
   unwrapOrElse<A>(altGetter: (err: E) => A): A | T;
   unwrapOrThrow(): T;
 
   json(): SerializedResult<T, E>;
-} & (
-  | {
-      isOk: false;
-      isErr: true;
-      unwrapErr(): E;
-      throwErr(): never;
-    }
-  | {
-      isOk: true;
-      isErr: false;
-      unwrap(): T;
-      throwErr(): void;
-    }
-);
+};
+
+type ResultResultMethods<T, F> = T extends ResultMethods<infer V, infer E>
+  ? {flatten: () => Result<V, E | F>}
+  : unknown;
+
+export type Result<T, E> = ResultMethods<T, E> &
+  ResultResultMethods<T, E> &
+  (
+    | {
+        isOk: false;
+        isErr: true;
+        unwrapErr(): E;
+      }
+    | {
+        isOk: true;
+        isErr: false;
+        unwrap(): T;
+      }
+  );
 
 // implementation
 class internalResult<T, E> {
@@ -40,11 +50,38 @@ class internalResult<T, E> {
     return !this.isOk;
   }
 
-  map<S>(f: (value: T) => S) {
+  flatten() {
+    if (this.isErr) return this;
+    if (!isResult(this.value)) {
+      throw new Error("Called flatten() on non-Result<Result<_>>");
+    }
+
+    return this.value;
+  }
+
+  map<S>(f: (value: T) => S): Result<S, E> {
     if (this.isOk) {
       return Ok(f(this.value as T));
     }
-    return this;
+    return this as Result<S, E>;
+  }
+
+  mapErr<F>(f: (error: E) => F): Result<T, F> {
+    if (this.isErr) {
+      return Err(f(this.error as E));
+    }
+    return this as Result<T, F>;
+  }
+
+  match<T2, E2>(arms: {
+    Ok: (value: T) => T2;
+    Err: (error: E) => E2;
+  }): T2 | E2 {
+    if (this.isOk) {
+      return arms.Ok(this.value as T);
+    } else {
+      return arms.Err(this.error as E);
+    }
   }
 
   unwrap() {
@@ -65,7 +102,7 @@ class internalResult<T, E> {
     if (this.isOk) {
       return this.value as T;
     }
-    throw altValue;
+    return altValue;
   }
 
   unwrapOrElse<A>(altGetter: (err: E) => A) {
@@ -90,20 +127,52 @@ class internalResult<T, E> {
   }
 }
 
-export function Ok<T>(value: T) {
+/** Internal helper for checking if an object is a Result */
+function isResult<T, E>(obj: unknown): obj is Result<T, E> {
+  return (
+    typeof obj === "object" &&
+    obj !== null &&
+    "isOk" in obj &&
+    typeof obj.isOk === "boolean"
+  );
+}
+
+// biome-ignore lint/suspicious/noExplicitAny:
+export function Ok<T>(value: T): Result<T, any> {
   const obj = new internalResult(true, value, undefined);
   Object.freeze(obj);
   return obj as unknown as Result<T, never>;
 }
 
-export function Err<E>(error: E) {
+// biome-ignore lint/suspicious/noExplicitAny:
+export function Err<E>(error: E): Result<any, E> {
   const obj = new internalResult(false, undefined, error);
   Object.freeze(obj);
   return obj as unknown as Result<never, E>;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-namespace
+// biome-ignore lint/style/noNamespace:
 export namespace Result {
+  /** Convert an array of Results to a single Result */
+  export function all<T, E>(results: Result<T, E>[]): Result<T[], E[]> {
+    const errors: E[] = [];
+    const values: T[] = [];
+
+    for (const result of results) {
+      if (result.isErr) {
+        errors.push(result.unwrapErr());
+      } else {
+        values.push(result.unwrap());
+      }
+    }
+
+    if (errors.length === 0) {
+      return Ok(values);
+    }
+
+    return Err(errors);
+  }
+
   /** Deserialize a Result. */
   export const parse = <T, E>(ser: SerializedResult<T, E>): Result<T, E> => {
     if ("#ok" in ser) {
@@ -121,9 +190,40 @@ export namespace Result {
     }
   }
 
-  /** Wrap a Promise-returning function to return a Result instead of throwing. */
-  export function wrap<T, E>(promise: Promise<T>): Promise<Result<T, E>> {
-    return promise.then(Ok).catch(Err);
+  /** Wrap a function to return a Result instead of throwing. */
+  export function wrap<E, F extends (...args: any[]) => any>(
+    fn: F,
+  ): (...args: Parameters<F>) => Result<ReturnType<F>, E> {
+    return (...args: Parameters<F>) => {
+      try {
+        return Ok(fn(...args));
+      } catch (error) {
+        return Err(error as E);
+      }
+    };
+  }
+
+  /**
+   * Wrap a Promise-returning function to return a Result instead of throwing.
+   * @todo this may not work when there's an error before the first await in the function
+   */
+  export function wrapAsync<E, F extends (...args: any[]) => Promise<any>>(
+    fn: F,
+  ): (
+    ...args: Parameters<F>
+  ) => Promise<Result<PromiseValue<ReturnType<F>>, E>> {
+    return (...args: Parameters<F>) => wrapPromise(fn(...args));
+  }
+
+  /** Wrap a Promise to return a Result instead of throwing. */
+  export async function wrapPromise<T, E>(
+    promise: Promise<T>,
+  ): Promise<Result<T, E>> {
+    try {
+      return Ok(await promise);
+    } catch (error) {
+      return Err(error as E);
+    }
   }
 }
 

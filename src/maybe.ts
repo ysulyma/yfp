@@ -1,13 +1,23 @@
 // interface
 interface MaybeMethods<T> {
+  filter<S extends T>(predicate: (value: T) => value is S): Maybe<S>;
+  filter(predicate: (value: T) => boolean): Maybe<T>;
+  inspect(f: (value: T) => unknown): Maybe<T>;
+  isSomeAnd(f: (value: T) => boolean): this is TSome<T>;
   map<S>(f: (value: T) => S): Maybe<S>;
-  unwrapOr(altValue: T): T;
-  unwrapOrElse(f: () => T): T;
+  or<S>(optb: Maybe<S>): Maybe<S | T>;
+  unwrapOr<S>(altValue: S): S | T;
+  unwrapOrElse<S>(getAltValue: () => S): S | T;
 
   json(): SerializedMaybe<T>;
 }
 
-export type Maybe<T> = MaybeMethods<T> &
+type MaybeMaybeMethods<T> = T extends MaybeMethods<infer V>
+  ? {flatten: () => Maybe<V>}
+  : unknown;
+
+export type Maybe<T> = MaybeMaybeMethods<T> &
+  MaybeMethods<T> &
   (
     | {
         isNone: false;
@@ -19,6 +29,9 @@ export type Maybe<T> = MaybeMethods<T> &
         isSome: false;
       }
   );
+
+type TSome<T> = Extract<Maybe<T>, {isSome: true}>;
+type TNone<T> = Extract<Maybe<T>, {isNone: true}>;
 
 // implementation
 class internalMaybe<T> implements MaybeMethods<T> {
@@ -34,11 +47,39 @@ class internalMaybe<T> implements MaybeMethods<T> {
     return !this.isSome;
   }
 
+  filter(predicate: (value: T) => boolean): Maybe<T> {
+    if (this.isSome && predicate(this.value as T)) {
+      return this as Maybe<T>;
+    }
+
+    return None as Maybe<T>;
+  }
+
+  inspect(f: (value: T) => unknown): Maybe<T> {
+    if (this.isSome) {
+      f(this.value as T);
+    }
+
+    return this as Maybe<T>;
+  }
+
+  isSomeAnd(f: (value: T) => boolean): this is TSome<T> {
+    return this.isSome && f(this.value as T);
+  }
+
   map<S>(f: (value: T) => S): Maybe<S> {
     if (this.isSome) {
       return Some(f(this.value as T));
     }
-    return None;
+    return None as Maybe<S>;
+  }
+
+  or<S>(optb: Maybe<S>): Maybe<S | T> {
+    if (this.isSome) {
+      return this as Maybe<S | T>;
+    }
+
+    return optb as Maybe<S | T>;
   }
 
   unwrap() {
@@ -48,18 +89,18 @@ class internalMaybe<T> implements MaybeMethods<T> {
     throw new Error("Tried to unwrap None");
   }
 
-  unwrapOr(altValue: T) {
+  unwrapOr<S>(altValue: S) {
     if (this.isSome) {
       return this.value as T;
     }
     return altValue;
   }
 
-  unwrapOrElse(f: () => T) {
+  unwrapOrElse<S>(getAltValue: () => S) {
     if (this.isSome) {
       return this.value as T;
     }
-    return f();
+    return getAltValue();
   }
 
   json(): SerializedMaybe<T> {
@@ -68,6 +109,25 @@ class internalMaybe<T> implements MaybeMethods<T> {
     }
     return null;
   }
+
+  flatten() {
+    if (this.isNone) return None;
+    if (!isMaybe(this.value)) {
+      throw new Error("Called flatten() on non-Maybe<Maybe<_>>");
+    }
+
+    if (this.value.isNone) return None;
+    return this.value;
+  }
+}
+
+function isMaybe<T>(obj: unknown): obj is Maybe<T> {
+  return (
+    typeof obj === "object" &&
+    obj !== null &&
+    "isSome" in obj &&
+    typeof obj.isSome === "boolean"
+  );
 }
 
 export function Some<T>(value: T): Maybe<T> {
@@ -76,7 +136,7 @@ export function Some<T>(value: T): Maybe<T> {
   return obj as unknown as Maybe<T>;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 export const None = new internalMaybe(false) as unknown as Maybe<any>;
 Object.freeze(None);
 
@@ -85,11 +145,38 @@ export type SerializedMaybe<T> = {
 } | null;
 
 // eslint-disable-next-line @typescript-eslint/no-namespace
+// biome-ignore lint/style/noNamespace: <explanation>
 export namespace Maybe {
+  /** Deserialize into a Maybe */
   export function parse<T>(obj: SerializedMaybe<T>): Maybe<T> {
     if (obj === null) {
-      return None;
+      return None as Maybe<T>;
     }
     return Some(obj["#some"]);
+  }
+
+  /** Compare two Maybe values */
+  export function eq<T>(
+    $a: Maybe<T>,
+    $b: Maybe<T>,
+    eq: (a: T, b: T) => boolean = (a, b) => a === b,
+  ): boolean {
+    if ($a.isNone && $b.isNone) return true;
+    if ($a.isSome && $b.isSome) return eq($a.unwrap(), $b.unwrap());
+    return false;
+  }
+
+  /** Return `None` if `value` is falsy, otherwise `Some(value)` */
+  export function falsy<T>(
+    value: T | "" | 0 | false | null | undefined,
+  ): Maybe<T> {
+    if (!value) return None as Maybe<T>;
+    return Some(value);
+  }
+
+  /** Returh `None` if `value` is nullish, otherwise `Some(value)` */
+  export function nullish<T>(value: T | null | undefined): Maybe<T> {
+    if (value === null || value === undefined) return None as Maybe<T>;
+    return Some(value);
   }
 }
