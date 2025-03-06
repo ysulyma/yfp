@@ -12,13 +12,12 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "files": [
-    "./dist/*"
-  ],
+  "files": ["./dist/*"],
   "type": "module",
   "author": "Yuri Sulyma <yuri@liqvidjs.org>",
   "license": "MIT",
   "devDependencies": {
+    "@biomejs/biome": "1.9.4",
     "@rollup/plugin-terser": "^0.4.4",
     "@rollup/plugin-typescript": "^11.1.6",
     "prettier": "^3.3.3",
